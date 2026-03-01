@@ -58,12 +58,12 @@ export const DataSetPage: React.FC = () => {
   const exportRef = React.useRef<HTMLDivElement>(null);
   const currentUser = sessionStorage.getItem('inv_userName') || '';
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     setLoading(true);
     try {
         const [reportItems, inventoryItems] = await Promise.all([
-          fetchReportData(),
-          fetchInventoryData()
+          fetchReportData(force),
+          fetchInventoryData(force)
         ]);
         const invMap = new Map<string, InventoryItem>();
         inventoryItems.forEach(i => invMap.set(`${i.barcodeValue}_${i.tranNo}`, i));
@@ -88,6 +88,13 @@ export const DataSetPage: React.FC = () => {
         } else setData([]);
     } catch (error) { console.error("Failed to load dataset", error); }
     finally { setLoading(false); }
+  };
+
+  const handleRefresh = () => {
+      import('../services/api').then(({ clearCache }) => {
+          clearCache();
+          loadData(true);
+      });
   };
 
   React.useEffect(() => { loadData(); }, [currentUser]);
@@ -339,7 +346,7 @@ export const DataSetPage: React.FC = () => {
                     </div>
                 )}
              </div>
-             <button onClick={loadData} disabled={loading} className="bg-blue-600 text-white px-4 h-10 rounded shadow flex items-center gap-2 font-medium disabled:bg-blue-300"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
+             <button onClick={handleRefresh} disabled={loading} className="bg-blue-600 text-white px-4 h-10 rounded shadow flex items-center gap-2 font-medium disabled:bg-blue-300"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
              <div className="relative h-10" ref={exportRef}>
                 <button onClick={() => setIsExportOpen(!isExportOpen)} disabled={loading || !visibleData.length} className="bg-green-600 text-white px-4 h-full rounded shadow flex items-center gap-2 font-medium disabled:bg-green-300">Export <ChevronDown className="w-4 h-4" /></button>
                 {isExportOpen && (

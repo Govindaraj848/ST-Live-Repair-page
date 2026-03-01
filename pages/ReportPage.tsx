@@ -75,12 +75,12 @@ export const ReportPage: React.FC = () => {
       return `T_${item.timestamp.trim()}_${item.barcode.trim()}_${item.tranNo.trim()}_${item.move.trim()}_${item.qty.trim()}`;
   };
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     setLoading(true);
     try {
         const [reportItems, inventoryItems] = await Promise.all([
-          fetchReportData(),
-          fetchInventoryData()
+          fetchReportData(force),
+          fetchInventoryData(force)
         ]);
         
         const invMap = new Map<string, InventoryItem>();
@@ -113,6 +113,13 @@ export const ReportPage: React.FC = () => {
     } finally {
         setLoading(false);
     }
+  };
+
+  const handleRefresh = () => {
+      import('../services/api').then(({ clearCache }) => {
+          clearCache();
+          loadData(true);
+      });
   };
 
   React.useEffect(() => {
@@ -392,7 +399,7 @@ export const ReportPage: React.FC = () => {
                     </div>
                 )}
              </div>
-             <button onClick={loadData} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow flex items-center gap-2 font-medium disabled:bg-blue-300 h-10">
+             <button onClick={handleRefresh} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow flex items-center gap-2 font-medium disabled:bg-blue-300 h-10">
                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
              </button>
              <div className="relative h-10" ref={exportRef}>
