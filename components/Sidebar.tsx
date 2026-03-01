@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, FileText, Database } from 'lucide-react';
+import { Home, FileText, Database, Tag } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const navigate = useNavigate();
@@ -66,6 +66,19 @@ export const Sidebar: React.FC = () => {
           >
             <Database className="w-6 h-6 mr-3 shrink-0" />
             <span className="font-medium text-lg">Data Set</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/design-mrp')}
+            className={`flex items-center px-6 py-4 rounded-lg transition-all duration-200 whitespace-nowrap ${
+              isActive('/design-mrp') 
+                ? 'bg-blue-700 text-white shadow-lg' 
+                : 'hover:bg-blue-800/50 text-blue-200 hover:text-white'
+            }`}
+            title="Design MRP"
+          >
+            <Tag className="w-6 h-6 mr-3 shrink-0" />
+            <span className="font-medium text-lg">Design MRP</span>
           </button>
         </div>
         

@@ -1,5 +1,5 @@
 
-import { InventoryItem, ReportItem } from '../types';
+import { InventoryItem, ReportItem, DesignMrpDetail } from '../types';
 import { MOCK_INVENTORY } from '../constants';
 
 // ==========================================
@@ -13,6 +13,39 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz0dS_UQmhML7-G
 // ==========================================
 // DATA FETCHING CONFIG
 // ==========================================
+
+const DESIGN_MRP_API_URL = 'https://wms-prod.technoboost.in/api/auth/design-mrp-detail';
+
+let cachedInventory: InventoryItem[] | null = null;
+let cachedReport: ReportItem[] | null = null;
+let cachedMrp: DesignMrpDetail[] | null = null;
+let cachedUsers: string[] | null = null;
+let lastFetchTime = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+export const clearCache = () => {
+  cachedInventory = null;
+  cachedReport = null;
+  cachedMrp = null;
+  cachedUsers = null;
+  lastFetchTime = 0;
+};
+
+export const fetchDesignMrpDetails = async (force = false): Promise<DesignMrpDetail[]> => {
+  if (!force && cachedMrp && Date.now() - lastFetchTime < CACHE_DURATION) {
+    return cachedMrp;
+  }
+  try {
+    const response = await fetch(DESIGN_MRP_API_URL);
+    if (!response.ok) throw new Error('Failed to fetch design MRP details');
+    const json = await response.json();
+    cachedMrp = json.data || [];
+    return cachedMrp!;
+  } catch (error) {
+    console.error('Error fetching design MRP details:', error);
+    return [];
+  }
+};
 
 // Direct Export URL
 const EXPORT_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
@@ -30,6 +63,9 @@ const USER_SHEET_URL = `https://docs.google.com/spreadsheets/d/${USER_SHEET_ID}/
 
 
 const parseCSVLine = (text: string) => {
+  if (!text.includes('"')) {
+    return text.split(',').map(s => s.trim());
+  }
   const result = [];
   let current = '';
   let inQuotes = false;
@@ -107,7 +143,10 @@ export const parseCSVData = (csvText: string): InventoryItem[] => {
     return data;
 };
 
-export const fetchInventoryData = async (): Promise<InventoryItem[]> => {
+export const fetchInventoryData = async (force = false): Promise<InventoryItem[]> => {
+  if (!force && cachedInventory && Date.now() - lastFetchTime < CACHE_DURATION) {
+    return cachedInventory;
+  }
   const timestamp = Date.now();
   try {
     const response = await fetch(`${EXPORT_URL}&t=${timestamp}`);
@@ -115,7 +154,11 @@ export const fetchInventoryData = async (): Promise<InventoryItem[]> => {
         const text = await response.text();
         if (!text.trim().toLowerCase().startsWith('<!doctype html>') && !text.trim().toLowerCase().startsWith('<html')) {
              const data = parseCSVData(text);
-             if (data.length > 0) return data;
+             if (data.length > 0) {
+                 cachedInventory = data;
+                 lastFetchTime = Date.now();
+                 return data;
+             }
         }
     }
   } catch (e) {
@@ -128,6 +171,8 @@ export const fetchInventoryData = async (): Promise<InventoryItem[]> => {
     const csvText = await response.text();
     const data = parseCSVData(csvText);
     if (!data || data.length === 0) return MOCK_INVENTORY;
+    cachedInventory = data;
+    lastFetchTime = Date.now();
     return data;
   } catch (error) {
     console.error("Error loading Google Sheet data", error);
@@ -135,7 +180,10 @@ export const fetchInventoryData = async (): Promise<InventoryItem[]> => {
   }
 };
 
-export const fetchUserNames = async (): Promise<string[]> => {
+export const fetchUserNames = async (force = false): Promise<string[]> => {
+  if (!force && cachedUsers && Date.now() - lastFetchTime < CACHE_DURATION) {
+    return cachedUsers;
+  }
   try {
     const response = await fetch(`${USER_SHEET_URL}&t=${Date.now()}`);
     if (!response.ok) throw new Error("Failed to fetch users sheet");
@@ -151,14 +199,18 @@ export const fetchUserNames = async (): Promise<string[]> => {
         users.add(name);
       }
     });
-    return Array.from(users).sort();
+    cachedUsers = Array.from(users).sort();
+    return cachedUsers;
   } catch (error) {
     console.error("Error fetching user list", error);
     return [];
   }
 };
 
-export const fetchReportData = async (): Promise<ReportItem[]> => {
+export const fetchReportData = async (force = false): Promise<ReportItem[]> => {
+  if (!force && cachedReport && Date.now() - lastFetchTime < CACHE_DURATION) {
+    return cachedReport;
+  }
   const timestamp = Date.now();
   try {
     const response = await fetch(`${REPORT_EXPORT_URL}&t=${timestamp}`);
@@ -199,7 +251,8 @@ export const fetchReportData = async (): Promise<ReportItem[]> => {
             batchNo: cols[18] || '' // Column 19 (Index 18)
         });
     }
-    return data.reverse();
+    cachedReport = data.reverse();
+    return cachedReport;
   } catch (e) {
     console.error("Error fetching report data", e);
     return [];

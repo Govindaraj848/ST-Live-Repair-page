@@ -1,9 +1,10 @@
 
 import * as React from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { InventoryItem } from '../types';
-import { fetchInventoryData, saveMoveToSheet, fetchReportData } from '../services/api';
+import { InventoryItem, DesignMrpDetail } from '../types';
+import { fetchInventoryData, saveMoveToSheet, fetchReportData, fetchDesignMrpDetails } from '../services/api';
 import { Loader2, CheckCircle, Save, X } from 'lucide-react';
+import { DiscountFlower } from '../components/DiscountFlower';
 
 export const ItemDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +26,7 @@ export const ItemDetail: React.FC = () => {
   const designsParam = searchParams.get('designs');
   
   const [items, setItems] = React.useState<InventoryItem[]>([]);
+  const [designMrpData, setDesignMrpData] = React.useState<Map<string, DesignMrpDetail>>(new Map());
   const [loading, setLoading] = React.useState(true);
   
   // State to track which items have been successfully saved (to hide them)
@@ -60,11 +62,18 @@ export const ItemDetail: React.FC = () => {
     const getItems = async () => {
       setLoading(true);
       try {
-        const [inventory, reportData] = await Promise.all([
+        const [inventory, reportData, mrpData] = await Promise.all([
              fetchInventoryData(), 
-             fetchReportData()
+             fetchReportData(),
+             fetchDesignMrpDetails()
         ]);
         
+        const mrpMap = new Map<string, DesignMrpDetail>();
+        mrpData.forEach(item => {
+          mrpMap.set(item.designNumber, item);
+        });
+        setDesignMrpData(mrpMap);
+
         const reportQtyMap = new Map<string, number>();
         
         // PRIORITIZE: Load last saved serial from session to prevent reset on refresh
@@ -125,7 +134,15 @@ export const ItemDetail: React.FC = () => {
              return acc;
         }, [] as InventoryItem[]);
         
-        const globalFiltered = availableInventory.filter(i => {
+        let targetDesigns: string[] = [];
+        if (id) {
+            targetDesigns = [id];
+        } else if (designsParam) {
+            targetDesigns = designsParam.split(',').filter(Boolean);
+        }
+
+        const foundItems = availableInventory.filter(i => {
+           if (!targetDesigns.includes(i.designNo)) return false;
            if (fItem && i.itemName !== fItem) return false;
            if (fTran && i.tranNo !== fTran) return false;
            if (fBrand && i.brand !== fBrand) return false;
@@ -138,14 +155,6 @@ export const ItemDetail: React.FC = () => {
            return true;
         });
 
-        let targetDesigns: string[] = [];
-        if (id) {
-            targetDesigns = [id];
-        } else if (designsParam) {
-            targetDesigns = designsParam.split(',').filter(Boolean);
-        }
-
-        const foundItems = globalFiltered.filter(i => targetDesigns.includes(i.designNo));
         const aggregatedMap = new Map<string, InventoryItem>();
 
         foundItems.forEach(item => {
@@ -270,7 +279,16 @@ export const ItemDetail: React.FC = () => {
     const batchTimestamp = new Date().toLocaleString();
 
     movesToProcess.forEach(({ key, item, reason, qty, calculatedSlNo }) => {
-        saveMoveToSheet(item, reason, currentUser, calculatedSlNo, qty, batchTimestamp);
+        // If the item has a discount from the MRP API, use that. Otherwise use the item's existing discount.
+        const mrpDetail = designMrpData.get(item.designNo);
+        let finalDiscount = item.discount;
+        if (mrpDetail && mrpDetail.discount) {
+          finalDiscount = `${mrpDetail.discount}${mrpDetail.type?.toLowerCase() === 'silver' ? ' Silver' : ''}`;
+        }
+        
+        const itemToSave = { ...item, discount: finalDiscount };
+
+        saveMoveToSheet(itemToSave, reason, currentUser, calculatedSlNo, qty, batchTimestamp);
         
         newLocalMoves.push({ 
             key: `${item.barcodeValue}_${item.tranNo}`, 
@@ -381,7 +399,15 @@ export const ItemDetail: React.FC = () => {
                         ? `https://kushals-hq-prod.s3.ap-south-1.amazonaws.com/images/${item.combId}.jpg`
                         : null;
 
-                    const hasDiscount = item.discount && item.discount !== '0' && item.discount !== '0%' && item.discount !== 'NA' && item.discount.trim() !== '';
+                    const mrpDetail = designMrpData.get(item.designNo);
+                    let displayDiscount = item.discount;
+                    let hasDiscount = item.discount && item.discount !== '0' && item.discount !== '0%' && item.discount !== 'NA' && item.discount.trim() !== '';
+                    
+                    if (mrpDetail && mrpDetail.discount) {
+                        displayDiscount = `${mrpDetail.discount}${mrpDetail.type?.toLowerCase() === 'silver' ? ' Silver' : ''}`;
+                        hasDiscount = true;
+                    }
+
                     const rowBg = hasDiscount ? 'bg-[#38761D]' : 'bg-white';
                     const rowText = hasDiscount ? 'text-white font-bold' : 'text-gray-900';
 
@@ -412,7 +438,16 @@ export const ItemDetail: React.FC = () => {
                             <div className="absolute top-0 left-0 w-0 h-0 border-t-[6px] border-t-green-600 border-r-[6px] border-r-transparent"></div>
                             {item.barcodeValue}
                             </td>
-                            <td className={`p-2 border border-gray-400 ${hasDiscount ? 'font-extrabold text-[#FFFF08]' : ''}`}>{item.discount}</td>
+                            <td className={`p-2 border border-gray-400 ${hasDiscount ? 'font-extrabold text-[#FFFF08]' : ''}`}>
+                                {mrpDetail && mrpDetail.discount ? (
+                                    <div className="flex flex-col items-center justify-center gap-1">
+                                        <DiscountFlower discount={mrpDetail.discount} type={mrpDetail.type} className="w-6 h-6" />
+                                        <span>{displayDiscount}</span>
+                                    </div>
+                                ) : (
+                                    displayDiscount
+                                )}
+                            </td>
                             <td className="p-2 border border-gray-400">{item.currentStk}</td>
                             <td className="p-2 border border-gray-400">
                                 {currentMove ? (

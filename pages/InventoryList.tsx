@@ -3,15 +3,17 @@ import * as React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { SyncBanner } from '../components/SyncBanner';
 import { Loader2, RefreshCw, Upload, CheckSquare, Square, Layers, X, CheckCircle, Search, Eye } from 'lucide-react';
-import { fetchInventoryData, fetchUserNames, parseCSVData, fetchReportData } from '../services/api';
-import { InventoryItem } from '../types';
+import { fetchInventoryData, fetchUserNames, parseCSVData, fetchReportData, fetchDesignMrpDetails, clearCache } from '../services/api';
+import { InventoryItem, DesignMrpDetail } from '../types';
 import { SearchableSelect } from '../components/SearchableSelect';
 import { IMAGE_BASE_URL } from '../constants';
+import { DiscountFlower } from '../components/DiscountFlower';
 
 export const InventoryList: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [inventory, setInventory] = React.useState<InventoryItem[]>([]);
+  const [designMrpData, setDesignMrpData] = React.useState<Map<string, DesignMrpDetail>>(new Map());
   const [loading, setLoading] = React.useState(true);
   
   // User Name Options from Google Sheet
@@ -121,13 +123,20 @@ export const InventoryList: React.FC = () => {
     }
   }, [location]);
 
-  const loadData = async () => {
+  const loadData = async (force = false) => {
     setLoading(true);
     try {
-      const [data, reportData] = await Promise.all([
-        fetchInventoryData(),
-        fetchReportData()
+      const [data, reportData, mrpData] = await Promise.all([
+        fetchInventoryData(force),
+        fetchReportData(force),
+        fetchDesignMrpDetails(force)
       ]);
+
+      const mrpMap = new Map<string, DesignMrpDetail>();
+      mrpData.forEach(item => {
+        mrpMap.set(item.designNumber, item);
+      });
+      setDesignMrpData(mrpMap);
 
       const reportQtyMap = new Map<string, number>();
       
@@ -187,10 +196,10 @@ export const InventoryList: React.FC = () => {
     }
   };
 
-  const loadUsers = async () => {
+  const loadUsers = async (force = false) => {
     setLoadingUsers(true);
     try {
-        const users = await fetchUserNames();
+        const users = await fetchUserNames(force);
         setUserOptions(users);
     } catch (e) {
         console.error("Failed to load users", e);
@@ -237,8 +246,10 @@ export const InventoryList: React.FC = () => {
     setLastVisitedDesign(null);
     setLastSavedSerial(''); 
     
+    clearCache();
+    
     try {
-        await Promise.all([loadData(), loadUsers()]);
+        await Promise.all([loadData(true), loadUsers(true)]);
         alert("Data refreshed from Sheets");
     } catch(e) {
         console.error(e);
@@ -275,74 +286,79 @@ export const InventoryList: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const filteredInventory = React.useMemo(() => {
-    return inventory.filter(item => {
-      if (selectedItemName && item.itemName !== selectedItemName) return false;
-      if (selectedTranNo && item.tranNo !== selectedTranNo) return false;
-      if (selectedBrand && item.brand !== selectedBrand) return false;
-      if (selectedStyle && item.style !== selectedStyle) return false;
-      if (selectedColor && item.color !== selectedColor) return false;
-      if (selectedPolish && item.polish !== selectedPolish) return false;
-      if (selectedSize && item.size !== selectedSize) return false;
-      if (selectedDummy7 && item.dummy7 !== selectedDummy7) return false;
-      if (selectedDummy8 && item.dummy8 !== selectedDummy8) return false;
-      return true;
+  const { filteredInventory, uniqueItemNames, visibleDesigns, designStockMap, totalTranCount } = React.useMemo(() => {
+    const items = new Set<string>();
+    const trans = new Set<string>();
+    const brands = new Set<string>();
+    const styles = new Set<string>();
+    const colors = new Set<string>();
+    const polishes = new Set<string>();
+    const sizes = new Set<string>();
+    const d7s = new Set<string>();
+    const d8s = new Set<string>();
+
+    const filtered: InventoryItem[] = [];
+    const visibleDesignsSet = new Set<string>();
+    const stockMap = new Map<string, number>();
+    const uniqueTrans = new Set<string>();
+
+    const lowerSearchQuery = searchQuery ? searchQuery.toLowerCase() : '';
+
+    inventory.forEach(item => {
+      // For each dropdown, we only include the item if it matches ALL OTHER current filters
+      const matchItem = !selectedItemName || item.itemName === selectedItemName;
+      const matchTran = !selectedTranNo || item.tranNo === selectedTranNo;
+      const matchBrand = !selectedBrand || item.brand === selectedBrand;
+      const matchStyle = !selectedStyle || item.style === selectedStyle;
+      const matchColor = !selectedColor || item.color === selectedColor;
+      const matchPolish = !selectedPolish || item.polish === selectedPolish;
+      const matchSize = !selectedSize || item.size === selectedSize;
+      const matchD7 = !selectedDummy7 || item.dummy7 === selectedDummy7;
+      const matchD8 = !selectedDummy8 || item.dummy8 === selectedDummy8;
+
+      if (matchTran && matchBrand && matchStyle && matchColor && matchPolish && matchSize && matchD7 && matchD8) items.add(String(item.itemName));
+      if (matchItem && matchBrand && matchStyle && matchColor && matchPolish && matchSize && matchD7 && matchD8) trans.add(String(item.tranNo));
+      if (matchItem && matchTran && matchStyle && matchColor && matchPolish && matchSize && matchD7 && matchD8) brands.add(String(item.brand));
+      if (matchItem && matchTran && matchBrand && matchColor && matchPolish && matchSize && matchD7 && matchD8) styles.add(String(item.style));
+      if (matchItem && matchTran && matchBrand && matchStyle && matchPolish && matchSize && matchD7 && matchD8) colors.add(String(item.color));
+      if (matchItem && matchTran && matchBrand && matchStyle && matchColor && matchSize && matchD7 && matchD8) polishes.add(String(item.polish));
+      if (matchItem && matchTran && matchBrand && matchStyle && matchColor && matchPolish && matchD7 && matchD8) sizes.add(String(item.size));
+      if (matchItem && matchTran && matchBrand && matchStyle && matchColor && matchPolish && matchSize && matchD8) d7s.add(String(item.dummy7));
+      if (matchItem && matchTran && matchBrand && matchStyle && matchColor && matchPolish && matchSize && matchD7) d8s.add(String(item.dummy8));
+
+      const isFullyMatched = matchItem && matchTran && matchBrand && matchStyle && matchColor && matchPolish && matchSize && matchD7 && matchD8;
+      
+      if (isFullyMatched) {
+        filtered.push(item);
+        
+        const matchesSearch = !lowerSearchQuery || item.designNo.toLowerCase().includes(lowerSearchQuery);
+        if (matchesSearch) {
+          visibleDesignsSet.add(item.designNo);
+        }
+
+        stockMap.set(item.designNo, (stockMap.get(item.designNo) || 0) + item.currentStk);
+        uniqueTrans.add(item.tranNo);
+      }
     });
-  }, [inventory, selectedItemName, selectedTranNo, selectedBrand, selectedStyle, selectedColor, selectedPolish, selectedSize, selectedDummy7, selectedDummy8]);
-
-  const uniqueItemNames = React.useMemo(() => {
-    const filterByOthers = (excludeKey: string) => {
-      return inventory.filter(item => {
-        if (excludeKey !== 'itemName' && selectedItemName && item.itemName !== selectedItemName) return false;
-        if (excludeKey !== 'tranNo' && selectedTranNo && item.tranNo !== selectedTranNo) return false;
-        if (excludeKey !== 'brand' && selectedBrand && item.brand !== selectedBrand) return false;
-        if (excludeKey !== 'style' && selectedStyle && item.style !== selectedStyle) return false;
-        if (excludeKey !== 'color' && selectedColor && item.color !== selectedColor) return false;
-        if (excludeKey !== 'polish' && selectedPolish && item.polish !== selectedPolish) return false;
-        if (excludeKey !== 'size' && selectedSize && item.size !== selectedSize) return false;
-        if (excludeKey !== 'dummy7' && selectedDummy7 && item.dummy7 !== selectedDummy7) return false;
-        if (excludeKey !== 'dummy8' && selectedDummy8 && item.dummy8 !== selectedDummy8) return false;
-        return true;
-      });
-    };
-
-    const getUnique = (key: keyof InventoryItem) => Array.from<string>(new Set(filterByOthers(key).map(i => String(i[key])))).filter(Boolean).sort();
 
     return {
-       items: getUnique('itemName'),
-       trans: getUnique('tranNo'),
-       brands: getUnique('brand'),
-       styles: getUnique('style'),
-       colors: getUnique('color'),
-       polishes: getUnique('polish'),
-       sizes: getUnique('size'),
-       d7s: getUnique('dummy7'),
-       d8s: getUnique('dummy8'),
+       filteredInventory: filtered,
+       uniqueItemNames: {
+         items: Array.from(items).filter(Boolean).sort(),
+         trans: Array.from(trans).filter(Boolean).sort(),
+         brands: Array.from(brands).filter(Boolean).sort(),
+         styles: Array.from(styles).filter(Boolean).sort(),
+         colors: Array.from(colors).filter(Boolean).sort(),
+         polishes: Array.from(polishes).filter(Boolean).sort(),
+         sizes: Array.from(sizes).filter(Boolean).sort(),
+         d7s: Array.from(d7s).filter(Boolean).sort(),
+         d8s: Array.from(d8s).filter(Boolean).sort(),
+       },
+       visibleDesigns: Array.from(visibleDesignsSet).sort(),
+       designStockMap: stockMap,
+       totalTranCount: uniqueTrans.size
     };
-  }, [inventory, selectedItemName, selectedTranNo, selectedBrand, selectedStyle, selectedColor, selectedPolish, selectedSize, selectedDummy7, selectedDummy8]);
-
-  const visibleDesigns = React.useMemo(() => {
-    let designs: string[] = Array.from<string>(new Set(filteredInventory.map(i => i.designNo))).sort();
-    if (searchQuery) {
-        const lower = searchQuery.toLowerCase();
-        designs = designs.filter((d: string) => d.toLowerCase().includes(lower));
-    }
-    return designs;
-  }, [filteredInventory, searchQuery]);
-
-  const designStockMap = React.useMemo(() => {
-    const map = new Map<string, number>();
-    filteredInventory.forEach(item => {
-        map.set(item.designNo, (map.get(item.designNo) || 0) + item.currentStk);
-    });
-    return map;
-  }, [filteredInventory]);
-
-  const totalTranCount = React.useMemo(() => {
-      if (filteredInventory.length === 0) return 0;
-      const uniqueTrans = new Set(filteredInventory.map(i => i.tranNo));
-      return uniqueTrans.size;
-  }, [filteredInventory]);
+  }, [inventory, selectedItemName, selectedTranNo, selectedBrand, selectedStyle, selectedColor, selectedPolish, selectedSize, selectedDummy7, selectedDummy8, searchQuery]);
 
   const handleItemClick = (designNo: string) => {
     if (!selectedUserName) {
@@ -632,6 +648,20 @@ export const InventoryList: React.FC = () => {
                              <span className={`font-extrabold text-xl 
                                 ${isSelected ? 'text-blue-700' : isVisited ? 'text-orange-600' : 'text-[#1a4b8c]'}
                              `}>{dNo}</span>
+                             
+                             {designMrpData.has(dNo) && (
+                               <div className="flex items-center gap-1 mt-1">
+                                 <DiscountFlower 
+                                   discount={designMrpData.get(dNo)!.discount} 
+                                   type={designMrpData.get(dNo)!.type} 
+                                   className="w-4 h-4"
+                                 />
+                                 <span className="text-xs font-bold text-gray-700">
+                                   {designMrpData.get(dNo)!.discount} {designMrpData.get(dNo)!.type?.toLowerCase() === 'silver' ? 'Silver' : ''}
+                                 </span>
+                               </div>
+                             )}
+
                              <span className="text-xs text-gray-600 font-medium mt-1">
                                  Qty: <span className="text-black font-bold">{designStockMap.get(dNo) || 0}</span>
                              </span>

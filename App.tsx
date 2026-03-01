@@ -5,6 +5,7 @@ import { InventoryList } from './pages/InventoryList';
 import { ItemDetail } from './pages/ItemDetail';
 import { ReportPage } from './pages/ReportPage';
 import { DataSetPage } from './pages/DataSetPage';
+import { DesignMrpPage } from './pages/DesignMrpPage';
 import { Sidebar } from './components/Sidebar';
 
 const App: React.FC = () => {
@@ -32,6 +33,9 @@ const App: React.FC = () => {
 
             {/* Route 5: Data Set Page */}
             <Route path="/dataset" element={<DataSetPage />} />
+
+            {/* Route 6: Design MRP Page */}
+            <Route path="/design-mrp" element={<DesignMrpPage />} />
 
             {/* Catch all */}
             <Route path="*" element={<Navigate to="/" replace />} />

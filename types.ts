@@ -1,4 +1,12 @@
 
+export interface DesignMrpDetail {
+  designNumber: string;
+  type: string;
+  discount: number;
+  oldMRP: number;
+  newMRP: number;
+}
+
 export interface InventoryItem {
   designNo: string;
   itemName: string;
