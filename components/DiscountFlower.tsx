@@ -10,7 +10,7 @@ export const DiscountFlower: React.FC<DiscountFlowerProps> = ({ discount, type, 
   const d = Number(discount);
   const t = type?.toLowerCase() || '';
 
-  let color = '#94a3b8'; // default gray
+  let color: string | undefined = undefined;
 
   if (d === 30 && t === 'silver') {
     color = '#0000ff'; // Blue
@@ -21,6 +21,9 @@ export const DiscountFlower: React.FC<DiscountFlowerProps> = ({ discount, type, 
   } else if (d === 40) {
     color = '#f44336'; // Red
   }
+
+  // ✅ Don't render anything if discount isn't 20, 30, or 40
+  if (!color) return null;
 
   return (
     <svg 
